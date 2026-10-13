@@ -1,0 +1,30 @@
+# Only the shared tools are kept in git: rules, pipeline, skill and package files.
+# Book folders (source PDFs, translations, DOCX/PDF output) stay local, whatever their name.
+/*
+!/.gitignore
+!/.claude/
+!/pipeline/
+!/RULES.md
+!/README.md
+!/LICENSE
+!/package.json
+!/package-lock.json
+
+# Only the skills folder of .claude/ (no local settings)
+/.claude/*
+!/.claude/skills/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# LibreOffice profile used by build.py
+pipeline/.lo-profile/
+
+# Qur'an text: downloaded by pipeline/quran/fetch.sh (Tanzil, CC BY 3.0), not redistributed here
+pipeline/quran/quran-simple-clean.txt
+
+# Editor / OS clutter
+.DS_Store
+*.swp
+.~lock.*#

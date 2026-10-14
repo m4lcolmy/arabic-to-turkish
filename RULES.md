@@ -20,6 +20,7 @@ translations/
     ├── work/                     ← renders and check reports (temporary, rebuilt on demand)
     ├── GLOSSARY.md               ← fixed term choices for this book
     ├── CHECK-part-NN.md          ← completeness check for each part
+    ├── reviews/                  ← independent ChatGPT review of each part (review.py)
     ├── REVIEW-QUEUE.md           ← review items of unattended runs (run_book.py)
     └── runs/                     ← logs of unattended sessions
 ```
@@ -92,7 +93,7 @@ translations/
 - A part holds **whole sections only** and at most `part_max_pages` source PDF pages (default **12**: about 250–330k tokens of context at high effort, so the completeness and readability passes still re-read the whole part with care). Sections are grouped so the parts are as few and as even as possible.
 - **"next" always means the next planned part**, never a single section of it, and a section is never split across parts. The only exception is a section longer than the limit: it is split at a heading, decided in the plan, never mid-session.
 - The plan changes only for parts not yet started (`plan.py` again, e.g. with `--max-pages` after `runs/log.tsv` shows context compaction or lots of room).
-- `pipeline/run_book.py` works through the plan unattended, one fresh session per part (see the skill's *Unattended mode*): the review items of every part collect in `REVIEW-QUEUE.md`, each part is committed to the book folder's own git repository, and the final PDF is made at the end. In unattended runs, the approval in steps 8–9 is the person's reading of `REVIEW-QUEUE.md` after the run.
+- `pipeline/run_book.py` works through the plan unattended, one fresh session per part (see the skill's *Unattended mode*): the review items of every part collect in `REVIEW-QUEUE.md`, each part is committed to the book folder's own git repository, and the final PDF is made at the end. In unattended runs, the approval in steps 9–10 is the person's reading of `REVIEW-QUEUE.md` after the run.
 
 1. Render the part's pages (`pipeline/pages.py`) and read every page visually.
 2. Transcribe each page into `source/text/p-NNN.ar.md`, exactly as printed.
@@ -102,5 +103,6 @@ translations/
 6. **Completeness check** (required, to prevent AI hallucination): compare source and translation sentence by sentence. Confirm that nothing is missing or added and that every number, page reference, hadith number and source is correct. Write the result to `CHECK-part-NN.md`, listing any deliberate deviations.
 7. **Readability pass:** re-read the whole Turkish text (titles, body, footnotes, cover) as a Turkish reader would, without looking at the source. Fix anything unclear, stiff or strange with minimal changes that keep the literary tone (see the balance rule in §4), then re-run the completeness check on the changed sentences.
    - **Pronoun check** (§4 *Pronouns*): read every footnote on its own, then every sentence with two or more "o / onu / ona / onun / kendisi" forms, and make sure each pronoun can point to only one thing. `check.py` lists likely candidates as WARN.
-8. Deliver the DOCX for review. Work part by part in DOCX only.
-9. **PDF comes last:** once all parts are approved, combine all DOCX files into one PDF (with fonts embedded) in `pdf/` with `pipeline/make_pdf.py`, and look over its contact sheet. It fills the contents page with the final Turkish page numbers first.
+8. **Independent review** (`pipeline/review.py`): a ChatGPT model reads the source pages and the translation and reports problems. Verify each finding against the source; apply the right ones, reject the rest with a reason, and log both in the CHECK file.
+9. Deliver the DOCX for review. Work part by part in DOCX only.
+10. **PDF comes last:** once all parts are approved, combine all DOCX files into one PDF (with fonts embedded) in `pdf/` with `pipeline/make_pdf.py`, and look over its contact sheet. It fills the contents page with the final Turkish page numbers first.

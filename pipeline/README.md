@@ -20,6 +20,7 @@ Claude finds the book and pages, transcribes, translates, checks, builds the DOC
 | `python3 pipeline/run_book.py <book> [--max-parts N]` | Translates the rest of the book unattended, then makes the PDF (below) |
 | `python3 pipeline/pages.py <book> 15-17` | Renders source pages (+ footnote zoom, text layer) to `<book>/work/pages/` |
 | `python3 pipeline/check.py <book> 05` | Automatic checks of a part (below) |
+| `python3 pipeline/review.py <book> 05` | Independent review of a part by a ChatGPT model through the Codex CLI; findings in `<book>/reviews/part-05.json` (below) |
 | `python3 pipeline/build.py <book> 05 [--pages 15-17]` | DOCX → PDF → page images in `<book>/work/render/`; records the part's page count and contents pages in `book.json` |
 | `python3 pipeline/new_book.py <file.pdf> [--name …]` | Sets up a new book folder |
 | `python3 pipeline/make_pdf.py <book> [--draft]` | The final book PDF from the reviewed DOCX files (below) |
@@ -37,6 +38,15 @@ It compares the Arabic transcription (`<book>/source/text/p-NNN.ar.md`) with the
 - **NOTE**: a corrected reference, to log under *Source errors corrected* and report.
 
 There is no glossary enforcement: the glossary guides word choice, it doesn't override natural Turkish.
+
+## What review.py does
+
+Step 9 of the skill. It sends the part's source page images, transcriptions, Turkish content file, `RULES.md`, the glossary and the CHECK file to a ChatGPT model with `codex exec` (read-only, no files changed), and asks for errors (omissions, additions, wrong meaning, numbers, references, ambiguous pronouns) and suggestions (stiff Turkish, glossary inconsistencies). Deliberate deviations already explained in the CHECK file are not raised again; instead it gives an opinion (keep / change, with the wording it recommends) on every open decision: the *Please review* items and deliberate deviations of the CHECK file and of the part's `REVIEW-QUEUE.md` entry.
+
+The findings are saved to `<book>/reviews/part-NN.json` and printed as R1, R2 … (findings) and Q1, Q2 … (open decisions). The translating session checks each one against the source image, applies or rejects it, logs the decision under *Independent review* in the CHECK file and reports it (in unattended runs, in `REVIEW-QUEUE.md`). A failed review (exit code 2) is logged and skipped, never blocks a part.
+
+- Needs the Codex CLI signed in with ChatGPT (`codex login`; the ChatGPT desktop app ships one in `/usr/lib/chatgpt/resources/codex`). No OpenAI API key.
+- `--model` defaults to `gpt-6.1-sol`, `--effort` to `medium` (enough for this job at a fraction of the frontier model's usage); `--timeout` to 9 minutes. A part of ~10 pages takes about 3–5 minutes.
 
 ## What make_pdf.py does
 
@@ -59,10 +69,21 @@ python3 pipeline/run_book.py nusra                  # the rest, then the final P
 
 One fresh `claude -p` session (Opus 5.5, high effort) per planned part, in book order. After each part the book folder is committed to its own local git repository (`git -C "<book>" log`; roll back one part with `git -C "<book>" revert <commit>`). Review items collect in `<book>/REVIEW-QUEUE.md`; `<book>/runs/log.tsv` records minutes, peak context and compactions per part. It stops on `<book>/BLOCKED.md`, on a part failing twice, or when make_pdf.py finds a problem; it waits out usage limits. Stop it any time with Ctrl+C: the next run resumes the unfinished part.
 
+### When Claude's usage runs out (Codex fallback)
+
+With the default `--engine auto`, a Claude usage limit doesn't stop the run: the same part goes to **`gpt-6-astra`** (effort `high`) through the Codex CLI, signed in with ChatGPT. Codex gets `SKILL.md` as its instructions and the same request (`<book> next unattended`), so it follows the same steps and `RULES.md`. It resumes from the files the stopped session left (transcriptions, content file, CHECK file). Every new part tries Claude first again, so Claude takes over by itself once its limit resets. If Codex is limited too, the runner waits `--wait-minutes` and tries again.
+
+- A part whose session was cut off (usage limit, error, Ctrl+C) is marked in `work/resume.json` and resumed first, by its page range, even when its DOCX and CHECK file already exist (the last steps, review decisions and the REVIEW-QUEUE.md entry, may be missing). The runner moves on only after a session that ended normally.
+- The review step (`review.py`, `gpt-6.1-sol`) is unchanged. On a Codex part, translator and reviewer are both OpenAI models (different ones, separate sessions), and both draw on the same ChatGPT quota.
+- A Codex part says *Translated by gpt-6-astra (Codex fallback)* in its CHECK file, in its `REVIEW-QUEUE.md` heading and in its book commit; read those parts a little more carefully.
+- Codex runs in its `workspace-write` sandbox: it can write only inside `translations/` and `~/.codex` (the nested `review.py` → `codex` call needs that), with network on for the review. Your own `~/.codex/config.toml` isn't loaded.
+- Logs: `runs/part-NN-codex-tryN.jsonl`; `runs/log.tsv` has an `engine` column (`claude:…` / `codex:…`).
+- `--engine codex` uses Codex only (e.g. when you know Claude is out); `--engine claude` waits out limits as before. `--fallback-model` / `--fallback-effort` change the Codex model (`gpt-6.1-sol` has a larger context window if Codex parts get compacted).
+
 ## Files per book
 
 - `book.json`: names, PDF, `page_offset` (pages before printed page 1, e.g. the cover), `sections` (from the contents page), `parts` (source PDF range of each planned part, from `plan.py`) and `part_max_pages`; `status.py` and "next" rely on them. `"layout": "flow"` (set for new books) frees the page count; build.py then keeps `layout_pages` (pages per part) and `toc_pages` (printed page of each contents title) up to date.
-- `source/text/`: page transcriptions; `work/`: renders and check reports (safe to delete, rebuilt on demand).
+- `source/text/`: page transcriptions; `reviews/`: the ChatGPT review of each part; `work/`: renders and check reports (safe to delete, rebuilt on demand).
 
 ## Setup notes
 

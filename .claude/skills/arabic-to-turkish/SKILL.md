@@ -1,7 +1,7 @@
 ---
 name: arabic-to-turkish
 description: Translate the next part of a book in this translations folder (Arabic PDF → Turkish DOCX) by the rules in RULES.md, with transcription, automatic checks, DOCX build and the CHECK file; or set up a new book from a PDF. Use when the person runs /arabic-to-turkish or asks to translate the next premise, section or pages of a book here.
-argument-hint: "<book> <pages | next | fifth premise>  ·  new <file.pdf>"
+argument-hint: "<book> <next | pages | fifth premise> [unattended]  ·  new <file.pdf>"
 ---
 
 # Translate a part
@@ -16,10 +16,11 @@ Read `RULES.md`, the book's `GLOSSARY.md`, and the previous part's content file 
 
 ## 1. Work out book, pages and part number
 - Request starts with `new` → go to **Setting up a new book** below.
-- Run `python3 pipeline/status.py <the request's words>`. It finds the book from any of its names inside the phrase (no book named → the most recent one) and prints the parts, the open sections and a `Next:` line.
-- Pages: an explicit range is used as given. "next" / "next premise|section|chapter" → the `Next:` line. A named section ("fifth premise", "beşinci öncül", "المقدمة الخامسة") → that section's range.
-- Part number: the next free one, unless an existing part is being redone.
-- Ask only when it is really ambiguous: several books match, or the range splits a section or overlaps a finished part. Otherwise state one line, e.g. `Part 05 = Beşinci Öncül, PDF pp. 15–17`, and go on.
+- Run `python3 pipeline/status.py <the request's words>`. It finds the book from any of its names inside the phrase (no book named → the most recent one) and prints the planned parts, their state and a `Next:` line.
+- **"next" (in any form: next part, next premise, next chapter) means the next planned part**, the `Next:` line: whole sections grouped up to the book's `part_max_pages` (RULES.md §6). Never one section of it, never a split section. A part `in progress` is resumed: reuse what exists.
+- `Next:` says to plan first → run `python3 pipeline/plan.py "<book>"`, then use its first part.
+- An explicit range or a named section ("fifth premise", "beşinci öncül", "المقدمة الخامسة") is used as given only when it matches a planned part or a part being redone; otherwise ask (unattended: see step 10).
+- State one line, e.g. `Part 04 = 4. Bölüm + 5. Bölüm, PDF pp. 11–19`, and go on.
 
 ## 2. Read the source
 `python3 pipeline/pages.py "<book>" A-B` → `<book>/work/pages/`. Read every `p-NNN.png`, and `p-NNN-zoom.png` for footnotes and small text. `p-NNN.txt` (text layer) is a cross-check only.
@@ -46,7 +47,7 @@ One blank line between paragraphs; footnotes after the last `---` line. Images a
 - The cover page is transcribed for the record but skipped by the checker.
 
 ## 4. Translate
-Write `<book>/build/content/part-NN.js` with the same structure as the previous part: one entry per source page, `header`, `blocks`, and `footnotes` with ids unique across the part. (Books without `"layout": "flow"` in `book.json`, such as المقدمات العشر, also need `pageStart`, the printed page number, on the first page.)
+Write `<book>/build/content/part-NN.js` with the same structure as the previous part: one entry per source page, `header`, `blocks`, and `footnotes` with ids unique across the part. (A book without `"layout": "flow"` in `book.json` also needs `pageStart`, the printed page number, on the first page.)
 - Contents page: a `toc` block with the entries as printed, numbers included (the checks compare them with the source). In flow books the build replaces the numbers with the real Turkish pages, so each entry's title must be **exactly** the title as it appears in the text.
 - Entries stay one per source page (the checks compare page by page), but the build **flows** the pages of one section together (RULES.md §2). A new page starts automatically at the cover, a blank page and a header change (new section). Add `newPage: true` to a page that must stand alone otherwise: contents, full-page image, back matter.
 - A paragraph the source splits across two pages: write its first half at the end of one page and its second half as the next page's first block with `cont: true`. The build joins them into one paragraph. Apply RULES.md §4 in full: faithful, natural literate Turkish, punctuation from the source, source errors corrected only when verified.
@@ -63,7 +64,7 @@ Write `<book>/build/content/part-NN.js` with the same structure as the previous 
 Re-run until no ERROR is left unexplained.
 
 ## 6. Build and look
-`python3 pipeline/build.py "<book>" NN --pages A-B` (`--pages` only the first time). Build parts in book order: a part's page numbers start after the previous part's real last page. build.py records the part's page count and where the contents titles landed, and names any later parts to rebuild when the count changed. Look at every image in `<book>/work/render/part-NN/` (`tr-NN.png`, Turkish page NN of the part): no page ending early inside a section, each section starting on a new page, titles not stranded at a page bottom, footnotes on the page of their marker, missing glyphs, images. Fix and rebuild.
+`python3 pipeline/build.py "<book>" NN` (planned parts already have their range; `--pages A-B` only for a part not in the plan). Build parts in book order: a part's page numbers start after the previous part's real last page. build.py records the part's page count and where the contents titles landed, and names any later parts to rebuild when the count changed. Look at every image in `<book>/work/render/part-NN/` (`tr-NN.png`, Turkish page NN of the part): no page ending early inside a section, each section starting on a new page, titles not stranded at a page bottom, footnotes on the page of their marker, missing glyphs, images. Fix and rebuild.
 
 ## 7. Completeness pass
 Source image against the Turkish, sentence by sentence (RULES.md §6). Write `<book>/CHECK-part-NN.md` in the format of the previous CHECK files: ✓ list per page, *Deliberate deviations*, *Source errors corrected*, *Readability pass*, *Result*. Add one line on the automatic checks (errors fixed; warnings accepted and why).
@@ -78,10 +79,17 @@ Reserved for later; not enabled yet.
 ## 10. Deliver and stop
 Report: the DOCX path and page count (and the source range's count when they differ), **every source correction** (page, printed → corrected), anything marked *Please review*, and new glossary entries. Then stop; the next part starts only after the person approves.
 
+### Unattended mode
+The request contains `unattended` when `pipeline/run_book.py` runs the book part after part, with nobody to answer. Everything above still applies, with these changes:
+- Never ask. Where you would ask, take the most faithful, conservative choice, mark it *Please review* in the CHECK file, and go on.
+- Truly blocked (source pages unreadable or missing, the plan wrong, a tool failing after a fix attempt): write `<book>/BLOCKED.md` with the part, what is wrong and what the person must decide, and stop without delivering. The runner stops on it.
+- The delivery report goes into `<book>/REVIEW-QUEUE.md` instead of waiting for approval: append a `## Part NN — <sections>, PDF A–B → N Turkish pages` heading with the DOCX path, every source correction, every *Please review* item, deliberate deviations worth a look, and new glossary entries (or "nothing to review"). Then end the session; the runner commits the part and starts the next one.
+
 ---
 
 ## Setting up a new book
 1. `python3 pipeline/new_book.py <file.pdf> [--name "<original title>"]` creates the folder, copies the PDF, extracts images and copies the layout template.
 2. Render and read the cover, the contents page and the last pages (`pages.py`). Fill `book.json`: `title_ar`, `title_tr`, `title_en`, `aliases` (include forms without diacritics), `author`, `page_offset` (PDF page − printed page; confirm on two pages; the Turkish edition starts its numbering after the same front pages), and `sections` from the contents, plus front and back matter, covering every PDF page.
 3. Match the original design (RULES.md §5): adapt the design tokens, header and footer in `build/make.js` (copied from `pipeline/template/`; keep its page-flow logic), prepare logo, footer and cover assets (`build/cover.py` is the previous book's cover script, a starting point). Agree the look with the person on Part 01 before continuing.
-4. Then translate Part 01 with steps 0–10.
+4. Plan the parts: `python3 pipeline/plan.py "<book>"` (whole sections, at most `part_max_pages` source pages each; RULES.md §6).
+5. Then translate Part 01 with steps 0–10.

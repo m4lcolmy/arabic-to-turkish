@@ -19,7 +19,9 @@ translations/
     ├── pdf/                      ← final combined PDF (made only at the end)
     ├── work/                     ← renders and check reports (temporary, rebuilt on demand)
     ├── GLOSSARY.md               ← fixed term choices for this book
-    └── CHECK-part-NN.md          ← completeness check for each part
+    ├── CHECK-part-NN.md          ← completeness check for each part
+    ├── REVIEW-QUEUE.md           ← review items of unattended runs (run_book.py)
+    └── runs/                     ← logs of unattended sessions
 ```
 
 ## 2. Scope and page counting
@@ -29,7 +31,6 @@ translations/
 - **Text flows inside a section.** A sentence or paragraph that doesn't fit continues on the next page, and no page ends early in the middle of a section. Only a section's last page may end part-way down.
 - **These always start on a new page and stand alone:** the cover, blank pages, the contents page, the first page of each section (introduction, each chapter), full-page images and back matter.
 - **Page numbers and the contents come from the Turkish layout.** Numbering runs on from part to part without a gap, and each contents entry shows the printed page where that title actually lands in the Turkish edition. The pipeline does this (`"layout": "flow"` in `book.json`); never copy page numbers from the Arabic contents.
-- Books built before this rule (المقدمات العشر) keep their one-page-per-source-page layout and are not rebuilt.
 
 ## 3. Reading the source
 
@@ -86,6 +87,12 @@ translations/
 ## 6. Workflow
 
 `/arabic-to-turkish` (see `pipeline/README.md`) runs these steps in order; the rules are the same when working by hand.
+
+**Parts.** A part is the work of one session, planned once per book with `pipeline/plan.py` and stored in `book.json` (`parts`, `part_max_pages`):
+- A part holds **whole sections only** and at most `part_max_pages` source PDF pages (default **12**: about 250–330k tokens of context at high effort, so the completeness and readability passes still re-read the whole part with care). Sections are grouped so the parts are as few and as even as possible.
+- **"next" always means the next planned part**, never a single section of it, and a section is never split across parts. The only exception is a section longer than the limit: it is split at a heading, decided in the plan, never mid-session.
+- The plan changes only for parts not yet started (`plan.py` again, e.g. with `--max-pages` after `runs/log.tsv` shows context compaction or lots of room).
+- `pipeline/run_book.py` works through the plan unattended, one fresh session per part (see the skill's *Unattended mode*): the review items of every part collect in `REVIEW-QUEUE.md`, each part is committed to the book folder's own git repository, and the final PDF is made at the end. In unattended runs, the approval in steps 8–9 is the person's reading of `REVIEW-QUEUE.md` after the run.
 
 1. Render the part's pages (`pipeline/pages.py`) and read every page visually.
 2. Transcribe each page into `source/text/p-NNN.ar.md`, exactly as printed.

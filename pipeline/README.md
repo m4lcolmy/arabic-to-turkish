@@ -15,7 +15,9 @@ Claude finds the book and pages, transcribes, translates, checks, builds the DOC
 
 | Command | What it does |
 |---|---|
-| `python3 pipeline/status.py [book]` | Parts done, sections left, and the next part |
+| `python3 pipeline/status.py [book]` | Planned parts, their state, and the next part |
+| `python3 pipeline/plan.py <book> [--max-pages 12]` | Groups the sections into parts (whole sections, at most N source pages) for "next" |
+| `python3 pipeline/run_book.py <book> [--max-parts N]` | Translates the rest of the book unattended, then makes the PDF (below) |
 | `python3 pipeline/pages.py <book> 15-17` | Renders source pages (+ footnote zoom, text layer) to `<book>/work/pages/` |
 | `python3 pipeline/check.py <book> 05` | Automatic checks of a part (below) |
 | `python3 pipeline/build.py <book> 05 [--pages 15-17]` | DOCX → PDF → page images in `<book>/work/render/`; records the part's page count and contents pages in `book.json` |
@@ -48,9 +50,18 @@ The last step (RULES.md §6.9). It converts each part's DOCX **as reviewed** (no
 - `--draft` builds from the parts done so far; gaps, out-of-date DOCX files and missing CHECK files become warnings. The draft goes to `work/final/`, never to `pdf/`.
 - `work/final/` also holds `report.txt` and `contact-sheet.png`, every page at a glance, for a last look before sharing. Exit code 1 means a check failed and no PDF was delivered.
 
+## Unattended run (run_book.py)
+
+```
+python3 pipeline/run_book.py nusra --max-parts 2    # two parts, then pause for a look
+python3 pipeline/run_book.py nusra                  # the rest, then the final PDF
+```
+
+One fresh `claude -p` session (Opus 5.5, high effort) per planned part, in book order. After each part the book folder is committed to its own local git repository (`git -C "<book>" log`; roll back one part with `git -C "<book>" revert <commit>`). Review items collect in `<book>/REVIEW-QUEUE.md`; `<book>/runs/log.tsv` records minutes, peak context and compactions per part. It stops on `<book>/BLOCKED.md`, on a part failing twice, or when make_pdf.py finds a problem; it waits out usage limits. Stop it any time with Ctrl+C: the next run resumes the unfinished part.
+
 ## Files per book
 
-- `book.json`: names, PDF, `page_offset` (pages before printed page 1, e.g. the cover), `sections` (from the contents page) and `parts` (source PDF range of each part); `status.py` and "next" rely on it. `"layout": "flow"` (set for new books) frees the page count; build.py then keeps `layout_pages` (pages per part) and `toc_pages` (printed page of each contents title) up to date.
+- `book.json`: names, PDF, `page_offset` (pages before printed page 1, e.g. the cover), `sections` (from the contents page), `parts` (source PDF range of each planned part, from `plan.py`) and `part_max_pages`; `status.py` and "next" rely on them. `"layout": "flow"` (set for new books) frees the page count; build.py then keeps `layout_pages` (pages per part) and `toc_pages` (printed page of each contents title) up to date.
 - `source/text/`: page transcriptions; `work/`: renders and check reports (safe to delete, rebuilt on demand).
 
 ## Setup notes

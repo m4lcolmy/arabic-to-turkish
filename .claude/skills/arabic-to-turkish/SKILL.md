@@ -1,6 +1,6 @@
 ---
 name: arabic-to-turkish
-description: Translate the next part of a book in this translations folder (Arabic PDF → Turkish DOCX) by the rules in RULES.md, with transcription, automatic checks, DOCX build and the CHECK file; or set up a new book from a PDF. Use when the person runs /arabic-to-turkish or asks to translate the next premise, section or pages of a book here.
+description: Translate the next part of a book in this translations folder (Arabic PDF → Turkish PDF) by the rules in RULES.md, with transcription, automatic checks, the part PDF and the CHECK file; or set up a new book from a PDF. Use when the person runs /arabic-to-turkish or asks to translate the next premise, section or pages of a book here.
 argument-hint: "<book> <next | pages | fifth premise> [unattended]  ·  new <file.pdf>"
 ---
 
@@ -82,13 +82,14 @@ Include the pronoun check (RULES.md §4 *Pronouns*, §6 step 7): every footnote 
 - Exit code 2 (`review skipped: …`): try once more; if it fails again, write `Independent review skipped: <reason>` in the CHECK file, report it, and go on. A failed review never blocks the part.
 
 ## 10. Deliver and stop
-Report: the DOCX path and page count (and the source range's count when they differ), **every source correction** (page, printed → corrected), anything marked *Please review*, new glossary entries, and the **independent review**: how many findings were applied and rejected, each applied change (page: old → new) and each rejection with its reason in a few words. Then stop; the next part starts only after the person approves.
+Report: the part PDF path (`<book>/part-NN_pdf-pA-B.pdf`, the file the person reviews) and page count (and the source range's count when they differ), **every source correction** (page, printed → corrected), anything marked *Please review*, new glossary entries, and the **independent review**: how many findings were applied and rejected, each applied change (page: old → new) and each rejection with its reason in a few words.
+Before reporting (interactive sessions only; in unattended mode the runner does this), close the bookkeeping that `run_book.py` relies on, so a later unattended run neither resumes this part nor misses it: append the part's entry to `<book>/REVIEW-QUEUE.md` (same format as in *Unattended mode* below), then run `python3 pipeline/finish_part.py "<book>" NN`. It clears `work/resume.json` when it names this part, logs the part in `runs/log.tsv` and commits the book folder. If it says the runner is working on the book, leave it: the runner finishes the part itself. Run it again after any later change the person asks for, so the commit holds the final state. Then stop; the next part starts only after the person approves.
 
 ### Unattended mode
 The request contains `unattended` when `pipeline/run_book.py` runs the book part after part, with nobody to answer. Everything above still applies, with these changes:
 - Never ask. Where you would ask, take the most faithful, conservative choice, mark it *Please review* in the CHECK file, and go on.
 - Truly blocked (source pages unreadable or missing, the plan wrong, a tool failing after a fix attempt): write `<book>/BLOCKED.md` with the part, what is wrong and what the person must decide, and stop without delivering. The runner stops on it.
-- The delivery report goes into `<book>/REVIEW-QUEUE.md` instead of waiting for approval: append a `## Part NN — <sections>, PDF A–B → N Turkish pages` heading with the DOCX path, every source correction, every *Please review* item, deliberate deviations worth a look, new glossary entries, and an **Independent review (<model>)** list as in step 10 (or "nothing to review"). Then end the session; the runner commits the part and starts the next one.
+- The delivery report goes into `<book>/REVIEW-QUEUE.md` instead of waiting for approval: append a `## Part NN — <sections>, PDF A–B → N Turkish pages` heading with the part PDF path, every source correction, every *Please review* item, deliberate deviations worth a look, new glossary entries, and an **Independent review (<model>)** list as in step 10 (or "nothing to review"). Then end the session; the runner commits the part and starts the next one.
 
 ---
 

@@ -4,7 +4,7 @@
 Usage:  python3 pipeline/plan.py <book> [--max-pages N] [--dry-run]
 
 A part is the work of one session. It holds whole sections only, so "next" never splits a section.
-Parts already started (content file, DOCX or CHECK file present) are kept as they are; every part not
+Parts already started (content file, part PDF or CHECK file present) are kept as they are; every part not
 started yet is dropped and the remaining sections are planned again, with as few parts as possible and
 their sizes kept even. A section longer than the limit becomes a part of its own (split it at a heading
 by hand, in book.json, if it is far too long for one session).
@@ -25,7 +25,7 @@ DEFAULT_MAX_PAGES = 12
 
 def started(book, part):
     return (content_file(book, part).exists() or (book / f'CHECK-part-{part}.md').exists()
-            or any((book / 'docx').glob(f'part-{part}_*.docx')))
+            or any(book.glob(f'part-{part}_pdf-p*.pdf')) or any((book / 'docx').glob(f'part-{part}_*.docx')))
 
 
 def group(sections, cap):

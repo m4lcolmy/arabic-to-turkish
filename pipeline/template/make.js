@@ -42,15 +42,16 @@ const FONT = 'Open Sans';
 const PAGE_W = 11906, PAGE_H = 16838, MX = 1000, TEXT_W = PAGE_W - 2 * MX; // A4, DXA
 const BODY_SIZE = 19, FN_SIZE = 14; // half-points
 
-// Inline markup: **bold**, ^^Qur’an verse in orange^^, [[fn:N]] footnote reference
+// Inline markup: **bold**, ++italic++, ^^Qur’an verse in orange^^, [[fn:N]] footnote reference
 function runs(text, base = {}) {
   const out = [];
-  for (const part of text.split(/(\*\*[^*]+\*\*|\^\^[^^]+\^\^|\[\[fn:\d+\]\])/)) {
+  for (const part of text.split(/(\*\*[^*]+\*\*|\+\+[^+]+\+\+|\^\^[^^]+\^\^|\[\[fn:\d+\]\])/)) {
     if (!part) continue;
     const fn = part.match(/^\[\[fn:(\d+)\]\]$/);
     if (fn) out.push(new FootnoteReferenceRun(Number(fn[1])));
     else if (part.startsWith('**')) out.push(new TextRun({ ...base, text: part.slice(2, -2), bold: true }));
     else if (part.startsWith('^^')) out.push(new TextRun({ ...base, text: part.slice(2, -2), color: VERSE }));
+    else if (part.startsWith('++')) out.push(new TextRun({ ...base, text: part.slice(2, -2), italics: true }));
     else out.push(new TextRun({ ...base, text: part }));
   }
   return out;

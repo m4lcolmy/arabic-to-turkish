@@ -4,8 +4,9 @@
 Usage:  python3 pipeline/run_book.py <book> [--max-parts N] [--engine auto|claude|codex] [--dry-run]
 
 Each round asks status.py for the next planned part (plan.py makes the plan), runs
-`claude -p "/arabic-to-turkish <book> next unattended"` in a new session, checks that the part is done
-(DOCX and CHECK file), and commits the book folder to its own local git repository, so one part can be
+`claude -p "/arabic-to-turkish <book> next unattended"` (/english-to-turkish for a book with
+"source_lang": "en") in a new session, checks that the part is done
+(part PDF and CHECK file), and commits the book folder to its own local git repository, so one part can be
 rolled back without touching the others. When every part is done it runs make_pdf.py and stops.
 
 It stops early, with a desktop notification, when:
@@ -14,7 +15,7 @@ It stops early, with a desktop notification, when:
   - --max-parts parts are done (e.g. --max-parts 2 to check the first parts before the rest)
   - make_pdf.py reports a failed check
 A usage limit is not a failure. A part whose session was cut off (usage limit, error) is resumed by its page
-range even when its DOCX and CHECK file already exist, since the last steps (review decisions, REVIEW-QUEUE.md)
+range even when its part PDF and CHECK file already exist, since the last steps (review decisions, REVIEW-QUEUE.md)
 may be missing; the runner moves on only after a session that ended normally. With --engine auto (the default) a Claude usage limit hands the same part to
 a ChatGPT model through the Codex CLI (`codex exec`, signed in with ChatGPT), which follows the same SKILL.md and
 RULES.md and resumes from whatever files the stopped session left. Every new part tries Claude first again, so
@@ -44,13 +45,22 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import PIPELINE, ROOT, load_meta, resolve_book  # noqa: E402
+from common import LANGS, PIPELINE, ROOT, load_meta, resolve_book, source_lang  # noqa: E402
 from review import CODEX_HOME, find_codex  # noqa: E402
 
 TRAILER = 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
 LIMIT = re.compile(r'usage limit|rate limit|limit reached|hit your (usage )?limit|overloaded|\b429\b|\b529\b'
                    r'|resets? at|resets \d', re.I)
-SKILL = ROOT / '.claude' / 'skills' / 'arabic-to-turkish' / 'SKILL.md'
+
+
+def skill_name(book):
+    """The translation skill for the book's source language: arabic-to-turkish, english-to-turkish."""
+    return f'{LANGS[source_lang(load_meta(book))].lower()}-to-turkish'
+
+
+def skill_file(book):
+    return ROOT / '.claude' / 'skills' / skill_name(book) / 'SKILL.md'
+
 
 CODEX_PROMPT = """You are the fallback translator of this unattended run: Claude is out of usage, so you do its job.
 Below is the skill Claude follows (SKILL.md). Follow it exactly, all steps 0–10 in unattended mode; RULES.md is the
@@ -69,7 +79,7 @@ Notes for this environment (they change no rule):
   what exists, as the skill says for a part in progress: check existing transcriptions against the images and keep
   them when right; continue the content file and CHECK file instead of starting over.
 - Change only this part's files and the shared files the skill names (GLOSSARY.md, REVIEW-QUEUE.md, BLOCKED.md,
-  book.json through the scripts). Never edit a finished part's transcriptions, content file, CHECK file or DOCX.
+  book.json through the scripts). Never edit a finished part's transcriptions, content file, CHECK file or part PDF.
 - Write "Translated by {model} (Codex fallback)" as the first line under *Result* in the CHECK file, and add
   " · translated by {model}" to the end of this part's REVIEW-QUEUE.md heading.
 - Do not commit; the runner commits the part.
@@ -154,13 +164,13 @@ def request(book, a, b, resume):
     if not resume:
         return f'{book.name} next unattended'
     return (f'{book.name} {a}-{b} unattended. Resume: an earlier session on this part stopped before the end; its '
-            f'DOCX and CHECK file may exist but are not final. Go through every step, reuse what is right and finish '
+            f'part PDF and CHECK file may exist but are not final. Go through every step, reuse what is right and finish '
             f'what is missing (independent review decisions, the REVIEW-QUEUE.md entry).')
 
 
 def claude_session(book, part, args, raw, start, req):
     sid = str(uuid.uuid4())
-    prompt = f'/arabic-to-turkish {req}'
+    prompt = f'/{skill_name(book)} {req}'
     cmd = ['claude', '-p', prompt, '--model', args.model, '--effort', args.effort,
            '--permission-mode', 'auto', '--output-format', 'stream-json', '--verbose', '--session-id', sid,
            '-n', f'{book.name} · Part {part}']
@@ -186,7 +196,7 @@ def claude_session(book, part, args, raw, start, req):
 
 def codex_session(book, part, args, raw, start, req):
     """The same part through the Codex CLI: SKILL.md as the instructions, sandboxed to translations/."""
-    skill = SKILL.read_text(encoding='utf-8').split('---', 2)[-1].strip()
+    skill = skill_file(book).read_text(encoding='utf-8').split('---', 2)[-1].strip()
     prompt = CODEX_PROMPT.format(request=req, model=args.fallback_model, skill=skill)
     last = book / 'runs' / f'part-{part}-codex-last.txt'
     last.unlink(missing_ok=True)
@@ -304,13 +314,16 @@ def main():
                 say(f'Stopped: sections are left that no part covers. Run: python3 pipeline/plan.py "{book.name}"', True)
                 return 1
             if nxt == 'DONE':
+                if args.dry_run:
+                    print('Every part is done; a run would make the final PDF (make_pdf.py).')
+                    return 0
                 break
             part, a, b = nxt.split()
             a, b = int(a), int(b)
         if args.dry_run:
             print(f'Next: Part {part}, PDF {a}–{b}{" (resuming a session that was cut off)" if resume else ""}')
             if args.engine != 'codex':
-                print(f'Would run: claude -p "/arabic-to-turkish {request(book, a, b, resume)}" '
+                print(f'Would run: claude -p "/{skill_name(book)} {request(book, a, b, resume)}" '
                       f'--model {args.model} --effort {args.effort} --permission-mode auto')
             if args.engine != 'claude':
                 print(f'{"On a Claude usage limit" if args.engine == "auto" else "Would run"}: codex exec '
@@ -337,7 +350,7 @@ def main():
             continue
         if res.get('is_error') or status_next(book).split()[:1] == [part]:
             failures[part], resume = attempt, (part, a, b)
-            say(f'Part {part}: not finished ({"session ended with an error" if res.get("is_error") else "no DOCX or CHECK file"}). '
+            say(f'Part {part}: not finished ({"session ended with an error" if res.get("is_error") else "no part PDF or CHECK file"}). '
                 f'Last words: {text[-300:]!r}')
             if attempt >= 2:
                 say(f'Stopped: Part {part} failed twice. Logs in {book / "runs"}.', True)

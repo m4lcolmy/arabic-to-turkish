@@ -1,4 +1,5 @@
 """Shared helpers for the translation pipeline (book lookup, book.json, content files)."""
+import hashlib
 import json
 import re
 import subprocess
@@ -54,6 +55,21 @@ def load_meta(book):
 
 def save_meta(book, meta):
     (book / 'book.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+LANGS = {'ar': 'Arabic', 'en': 'English'}  # book.json "source_lang"; each has its skill, <lang>-to-turkish
+
+
+def source_lang(meta):
+    lang = meta.get('source_lang', 'ar')
+    if lang not in LANGS:
+        die(f'book.json "source_lang" is "{lang}"; expected one of {", ".join(LANGS)}')
+    return lang
+
+
+def transcription(book, n, meta=None):
+    """source/text/p-NNN.<lang>.md: the page as printed."""
+    return book / 'source' / 'text' / f'p-{n:03d}.{source_lang(meta if meta is not None else load_meta(book))}.md'
 
 
 def book_names(book):
@@ -154,6 +170,32 @@ def is_flow(meta):
     return meta.get('layout') == 'flow'
 
 
+def front_pages(meta):
+    """Turkish pages before printed page 1 (book.json "front_pages"; default page_offset, the source's count).
+    They differ when the Turkish front matter takes more or fewer pages than the source's."""
+    fp = meta.get('front_pages')
+    return fp if fp is not None else meta.get('page_offset') or 0
+
+
+def roman(n):
+    out = ''
+    for v, r in ((1000, 'm'), (900, 'cm'), (500, 'd'), (400, 'cd'), (100, 'c'), (90, 'xc'), (50, 'l'), (40, 'xl'),
+                 (10, 'x'), (9, 'ix'), (5, 'v'), (4, 'iv'), (1, 'i')):
+        while n >= v:
+            out, n = out + r, n - v
+    return out
+
+
+def page_label(meta, pos):
+    """Printed page number of Turkish book position pos (cover = 1): arabic from printed page 1 on; in the front
+    matter lower-case roman when book.json has "front_roman_from" (the position numbered i), otherwise none."""
+    fp = front_pages(meta)
+    if pos > fp:
+        return str(pos - fp)
+    start = meta.get('front_roman_from')
+    return roman(pos - start + 1) if start and pos >= start else ''
+
+
 def part_order(meta):
     return [p for p, _ in sorted(meta.get('parts', {}).items(), key=lambda x: x[1][0])]
 
@@ -172,6 +214,31 @@ def first_position(meta, part):
     return None
 
 
+def part_pdf(book, part, meta=None):
+    """The part as it will print, the file the person reviews: <book>/part-NN_pdf-pA-B.pdf."""
+    a, b = (meta if meta is not None else load_meta(book))['parts'][part]
+    return book / f'part-{part}_pdf-p{a}-{b}.pdf'
+
+
+def build_inputs(book, part):
+    """Fingerprint of what a part PDF is made from: its content file, the layout scripts and the assets."""
+    h = hashlib.sha256()
+    files = [content_file(book, part), *sorted((book / 'build').glob('*.js'))]
+    files += sorted(f for f in (book / 'assets').rglob('*') if f.is_file())
+    for f in files:
+        h.update(f.name.encode() + b'\0' + f.read_bytes())
+    return h.hexdigest()[:16]
+
+
+def build_numbers(book, meta, part):
+    """Fingerprint of what a part's printed numbers depend on: where the part starts, the front matter
+    settings and, for the part with the contents page, the contents numbers."""
+    has_toc = any(b.get('type') == 'toc' for pg in load_content(book, part) for b in pg.get('blocks', []))
+    key = [first_position(meta, part), front_pages(meta), meta.get('front_roman_from'),
+           meta.get('toc_pages', {}) if has_toc else None]
+    return hashlib.sha256(json.dumps(key, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
 def toc_titles(book, meta):
     """(all contents titles, titles of the contents pages themselves) from the 'toc' blocks of the content files."""
     titles, own = [], set()
@@ -188,6 +255,11 @@ def toc_titles(book, meta):
 
 def plain(s):
     return ' '.join(unicodedata.normalize('NFKC', s).replace('\xad', '').split())
+
+
+def fold(s):
+    """plain() without case, the Turkish way (I → ı, İ → i): titles may be set in capitals on the page."""
+    return plain(s).replace('I', 'ı').replace('İ', 'i').lower()
 
 
 def page_text(pdf, page):

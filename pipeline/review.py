@@ -3,7 +3,8 @@
 
 Usage:  python3 pipeline/review.py <book> NN [--model M] [--effort E] [--timeout MIN]
 
-Sends the part's source page images, the transcriptions, the Turkish content file, RULES.md, the glossary
+Sends the part's source page images, the transcriptions, the Turkish content file, RULES.md (and RULES-EN.md
+for an English book), the glossary
 the part's CHECK file (so known deliberate deviations are not raised again) and the part's entry in
 REVIEW-QUEUE.md, if any, to a ChatGPT model through the Codex CLI (`codex exec`, signed in with ChatGPT: no
 API key needed). The model only reads; it changes nothing. It reports findings (R1, R2 …) and gives an opinion
@@ -30,7 +31,8 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import PIPELINE, ROOT, content_file, part_id, part_pages, resolve_book  # noqa: E402
+from common import (LANGS, PIPELINE, ROOT, content_file, load_meta, part_id, part_pages,  # noqa: E402
+                    resolve_book, source_lang, transcription)
 
 CODEX_CANDIDATES = ['/usr/lib/chatgpt/resources/codex']
 CODEX_HOME = Path(os.environ.get('CODEX_HOME', Path.home() / '.codex'))
@@ -63,12 +65,12 @@ SCHEMA = {
             'items': {
                 'type': 'object',
                 'additionalProperties': False,
-                'required': ['page', 'severity', 'category', 'arabic', 'turkish', 'proposed', 'reason'],
+                'required': ['page', 'severity', 'category', 'source', 'turkish', 'proposed', 'reason'],
                 'properties': {
                     'page': {'type': 'integer'},
                     'severity': {'type': 'string', 'enum': ['error', 'suggestion']},
                     'category': {'type': 'string', 'enum': CATEGORIES},
-                    'arabic': {'type': 'string'},
+                    'source': {'type': 'string'},
                     'turkish': {'type': 'string'},
                     'proposed': {'type': 'string'},
                     'reason': {'type': 'string'},
@@ -78,7 +80,7 @@ SCHEMA = {
     },
 }
 
-PROMPT = """You are an independent reviewer of an Arabic → Turkish book translation. Another translator made it;
+PROMPT = """You are an independent reviewer of an {lang} → Turkish book translation. Another translator made it;
 your job is to find what they got wrong. You change nothing yourself: you only report.
 
 Attached are the images of the source PDF pages {a}–{b} (in order, one image per page). Below are the rules the
@@ -96,10 +98,10 @@ Do not report:
 - anything the completeness check lists as a deliberate deviation or a corrected source error, unless the reason
   given there is wrong;
 - greetings, farewells and "we continue the series" lines left out (a book-specific rule);
-- layout, markup (^^ %% ** __ [[fn:]]), page breaks or the `cont` mechanism;
+- layout, markup (^^ %% ~~ && ** __ ++ [[fn:]]), page breaks or the `cont` mechanism;
 - harmless matters of taste. Natural, literate Turkish that keeps the meaning and the author's voice is correct.
 
-For each finding give the PDF page number, the Arabic words concerned (copied from the source), the Turkish
+For each finding give the PDF page number, the {lang} words concerned (copied from the source), the Turkish
 text exactly as it appears in the content file (so it can be searched for), your proposed Turkish replacement
 for that same text (empty when the fix is only to add a missing passage elsewhere: then give the missing
 Turkish in "proposed" and say where in "reason"), and a short reason in English. Be precise and sparing: every
@@ -185,9 +187,14 @@ def main():
         subprocess.run([sys.executable, str(PIPELINE / 'pages.py'), str(book), f'{a}-{b}'],
                        check=True, capture_output=True)
     images = [str(pages / f'p-{n:03d}.png') for n in range(a, b + 1)]
-    transcriptions = '\n\n'.join(f'----- PDF page {n} -----\n' + read(book / 'source' / 'text' / f'p-{n:03d}.ar.md')
+    meta = load_meta(book)
+    lang = source_lang(meta)
+    transcriptions = '\n\n'.join(f'----- PDF page {n} -----\n' + read(transcription(book, n, meta))
                                  for n in range(a, b + 1))
-    prompt = PROMPT.format(a=a, b=b, part=part, rules=read(ROOT / 'RULES.md'), glossary=read(book / 'GLOSSARY.md'),
+    rules = read(ROOT / 'RULES.md')
+    if lang == 'en':
+        rules += '\n\n===== RULES-EN.md (English sources: it overrides RULES.md where they differ) =====\n' + read(ROOT / 'RULES-EN.md')
+    prompt = PROMPT.format(a=a, b=b, part=part, lang=LANGS[lang], rules=rules, glossary=read(book / 'GLOSSARY.md'),
                            transcriptions=transcriptions, content=read(content_file(book, part)),
                            check=read(book / f'CHECK-part-{part}.md'),
                            queue=queue_entry(book, part) or '(none yet: use the completeness check)')
@@ -231,7 +238,7 @@ def main():
     print(answer['summary'] + '\n')
     for i, x in enumerate(f, 1):
         print(f'R{i} · p. {x["page"]} · {x["severity"]} · {x["category"]}\n'
-              f'   AR:  {x["arabic"]}\n   TR:  {x["turkish"]}\n   NEW: {x["proposed"]}\n   WHY: {x["reason"]}\n')
+              f'   SRC: {x["source"]}\n   TR:  {x["turkish"]}\n   NEW: {x["proposed"]}\n   WHY: {x["reason"]}\n')
     if o:
         print('Open decisions:\n')
     for i, x in enumerate(o, 1):

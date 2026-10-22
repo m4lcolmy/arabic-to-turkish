@@ -18,9 +18,10 @@ from common import books, content_file, load_meta, pdf_pages, resolve_book, sour
 
 
 def state(book, part):
-    docx = any((book / 'docx').glob(f'part-{part}_*.docx'))
+    built = (any(book.glob(f'part-{part}_pdf-p*.pdf'))  # the part PDF (build.py)
+             or any((book / 'docx').glob(f'part-{part}_*.docx')))  # books made before part PDFs: their DOCX
     check = (book / f'CHECK-part-{part}.md').exists()
-    return 'done' if docx and check else 'in progress' if content_file(book, part).exists() else 'planned'
+    return 'done' if built and check else 'in progress' if content_file(book, part).exists() else 'planned'
 
 
 def main():

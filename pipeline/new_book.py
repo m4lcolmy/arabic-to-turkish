@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Set up a new book folder from a PDF.
 
-Usage:  python3 pipeline/new_book.py <file.pdf> [--name "<original title>"]
+Usage:  python3 pipeline/new_book.py <file.pdf> [--name "<original title>"] [--lang ar|en]
 
 Creates translations/<name>/ with the layout from RULES.md §1, copies the PDF into source/,
 extracts its images into assets/ (pdfimages, original quality), copies the layout template into build/,
-and writes empty book.json and GLOSSARY.md files to fill in from the contents page.
+and writes empty book.json and GLOSSARY.md files to fill in from the contents page. --lang is the source
+language (book.json "source_lang"): ar (default, /arabic-to-turkish) or en (/english-to-turkish).
 """
 import argparse
 import shutil
@@ -14,13 +15,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import PIPELINE, ROOT, die, pdf_pages, save_meta  # noqa: E402
+from common import LANGS, PIPELINE, ROOT, die, pdf_pages, save_meta  # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('pdf', type=Path)
     ap.add_argument('--name', help='folder name, normally the original title (default: the PDF file name)')
+    ap.add_argument('--lang', choices=list(LANGS), default='ar', help='source language (default ar)')
     args = ap.parse_args()
 
     pdf = args.pdf.expanduser().resolve()
@@ -31,7 +33,7 @@ def main():
     if (book / 'book.json').exists():
         die(f'{book} is already set up')
 
-    for d in ('source/text', 'assets', 'build/content', 'docx', 'pdf', 'work'):
+    for d in ('source/text', 'assets', 'build/content', 'output', 'work'):
         (book / d).mkdir(parents=True, exist_ok=True)
     target = book / 'source' / pdf.name
     if not target.exists():
@@ -44,12 +46,13 @@ def main():
     images = sorted((book / 'assets').glob('src-*'))
 
     save_meta(book, {
-        'title_ar': name, 'title_tr': '', 'title_en': '', 'aliases': [], 'author': '', 'layout': 'flow',
+        'title_ar': name if args.lang == 'ar' else '', 'title_tr': '', 'title_en': name if args.lang == 'en' else '',
+        'aliases': [], 'author': '', 'source_lang': args.lang, 'layout': 'flow',
         'pdf': f'source/{pdf.name}', 'page_offset': None, 'sections': [], 'parts': {},
     })
     glossary = book / 'GLOSSARY.md'
     if not glossary.exists():
-        glossary.write_text(f'# Glossary — {name} → (Turkish title)\n\n| Arabic | Turkish | Note |\n|---|---|---|\n',
+        glossary.write_text(f'# Glossary — {name} → (Turkish title)\n\n| {LANGS[args.lang]} | Turkish | Note |\n|---|---|---|\n',
                             encoding='utf-8')
 
     print(f'Set up {book}')

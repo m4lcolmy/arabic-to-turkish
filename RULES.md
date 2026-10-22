@@ -1,23 +1,25 @@
 # Translation Rules
 
-These rules apply to every translation made in this folder. Follow them for each new book and each new part of a book.
+These rules apply to every translation made in this folder. Follow them for each new book and each new part of a book. Books translated from English follow them too, with the changes in `RULES-EN.md`.
 
 ## 1. Folder layout
 
 ```
 translations/
 ├── RULES.md                      ← this file
+├── RULES-EN.md                   ← what changes for English source books
 ├── pipeline/                     ← shared tools for the workflow (see pipeline/README.md)
 ├── .claude/skills/arabic-to-turkish ← the /arabic-to-turkish command
+├── .claude/skills/english-to-turkish ← the /english-to-turkish command (book.json "source_lang": "en")
 └── <book name>/                  ← named after the original title (e.g. المقدمات العشر)
     ├── book.json                 ← names, page offset, sections and parts (used by the pipeline)
     ├── source/                   ← the original PDF, never modified
-    │   └── text/                 ← page transcriptions p-NNN.ar.md, exactly as printed
+    │   └── text/                 ← page transcriptions p-NNN.ar.md (p-NNN.en.md), exactly as printed
     ├── assets/                   ← images extracted from the source (+ rebuilt cover, decorations)
     ├── build/                    ← build scripts; content/part-NN.js holds the translated text
-    ├── docx/                     ← one DOCX per part: part-NN_pdf-pX-Y.docx
-    ├── pdf/                      ← final combined PDF (made only at the end)
-    ├── work/                     ← renders and check reports (temporary, rebuilt on demand)
+    ├── part-NN_pdf-pX-Y.pdf      ← each part as it will print (build.py): the file to review, next to its CHECK file
+    ├── output/                   ← the finished book PDF (make_pdf.py, made only at the end)
+    ├── work/                     ← renders, check reports, the temporary DOCX of each build (rebuilt on demand)
     ├── GLOSSARY.md               ← fixed term choices for this book
     ├── CHECK-part-NN.md          ← completeness check for each part
     ├── reviews/                  ← independent ChatGPT review of each part (review.py)
@@ -87,7 +89,7 @@ translations/
 
 ## 6. Workflow
 
-`/arabic-to-turkish` (see `pipeline/README.md`) runs these steps in order; the rules are the same when working by hand.
+`/arabic-to-turkish` and `/english-to-turkish` (see `pipeline/README.md`) run these steps in order; the rules are the same when working by hand.
 
 **Parts.** A part is the work of one session, planned once per book with `pipeline/plan.py` and stored in `book.json` (`parts`, `part_max_pages`):
 - A part holds **whole sections only** and at most `part_max_pages` source PDF pages (default **12**: about 250–330k tokens of context at high effort, so the completeness and readability passes still re-read the whole part with care). Sections are grouped so the parts are as few and as even as possible.
@@ -99,10 +101,10 @@ translations/
 2. Transcribe each page into `source/text/p-NNN.ar.md`, exactly as printed.
 3. Translate into `build/content/part-NN.js`.
 4. **Automatic checks** (`pipeline/check.py`): fix every ERROR or explain it in the CHECK file; judge each WARN on its merits, since natural Turkish wins over matching counts.
-5. Build the DOCX (`pipeline/build.py`); build parts in book order, since each part's page numbers start after the previous part's real last page. Check every rendered page visually: no page ending early inside a section, every section starting on a new page, footnotes on the page of their marker, missing glyphs. If a part's page count changes after later parts were built, rebuild the later parts (build.py lists them).
+5. Build the part PDF (`pipeline/build.py`); build parts in book order, since each part's page numbers start after the previous part's real last page. Check every rendered page visually: no page ending early inside a section, every section starting on a new page, footnotes on the page of their marker, missing glyphs. If a part's page count changes after later parts were built, rebuild the later parts (build.py lists them).
 6. **Completeness check** (required, to prevent AI hallucination): compare source and translation sentence by sentence. Confirm that nothing is missing or added and that every number, page reference, hadith number and source is correct. Write the result to `CHECK-part-NN.md`, listing any deliberate deviations.
 7. **Readability pass:** re-read the whole Turkish text (titles, body, footnotes, cover) as a Turkish reader would, without looking at the source. Fix anything unclear, stiff or strange with minimal changes that keep the literary tone (see the balance rule in §4), then re-run the completeness check on the changed sentences.
    - **Pronoun check** (§4 *Pronouns*): read every footnote on its own, then every sentence with two or more "o / onu / ona / onun / kendisi" forms, and make sure each pronoun can point to only one thing. `check.py` lists likely candidates as WARN.
 8. **Independent review** (`pipeline/review.py`): a ChatGPT model reads the source pages and the translation and reports problems. Verify each finding against the source; apply the right ones, reject the rest with a reason, and log both in the CHECK file.
-9. Deliver the DOCX for review. Work part by part in DOCX only.
-10. **PDF comes last:** once all parts are approved, combine all DOCX files into one PDF (with fonts embedded) in `pdf/` with `pipeline/make_pdf.py`, and look over its contact sheet. It fills the contents page with the final Turkish page numbers first.
+9. Deliver the part PDF for review (`<book>/part-NN_pdf-pX-Y.pdf`, written by `build.py`): the part exactly as it will print, fonts embedded. Nothing is edited by hand; a change goes into the content file and the part is rebuilt.
+10. **The book PDF comes last:** once all parts are approved, `pipeline/make_pdf.py` merges the part PDFs as reviewed into `output/`, and you look over its contact sheet. It first rebuilds any part whose page or contents numbers moved (text unchanged), so the contents shows the final Turkish page numbers.

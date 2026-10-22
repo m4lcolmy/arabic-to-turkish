@@ -6,7 +6,8 @@ Usage:  python3 pipeline/pages.py <book> <first>[-<last>]
 Writes to <book>/work/pages/:
   p-NNN.png       whole page, 150 dpi (for reading)
   p-NNN-zoom.png  lower 45 % of the page at 260 dpi (footnotes and small text)
-  p-NNN.txt       PDF text layer: a cross-check only, Arabic letters are often broken
+  p-NNN.txt       PDF text layer: a cross-check only (Arabic letters are often broken; English is a
+                  good starting draft for the transcription, checked against the image)
 """
 import re
 import subprocess
